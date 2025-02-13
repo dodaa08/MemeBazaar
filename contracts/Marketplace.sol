@@ -4,8 +4,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/utils/Counters.sol";    
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-
-contract Marketplace{
+contract MemeCoinMarketplace {
     
     using Counters for Counters.Counter;
     Counters.Counter private _tokensSold;
@@ -15,96 +14,110 @@ contract Marketplace{
     address payable private owner;
     uint256 private listingFee = 0.045 ether;
 
-    mapping(uint256 => MarketItem) public marketItemIdToMarketItem;   // map the id to items simply.
-
-    struct MarketItem{
-        uint256  marketItemId;
-        uint256 tokenId;
-        address itemAddress;
+    struct MarketItem {
+        uint256 marketItemId;
+        uint256 amount;  // Use amount instead of tokenId for ERC-20 tokens
+        address tokenAddress;
         address payable seller;
         address payable buyer;
         uint256 price;
         bool sold;
         bool canceled;
     }
-    constructor(){
+
+    mapping(uint256 => MarketItem) public marketItemIdToMarketItem;
+
+    constructor() {
         owner = payable(msg.sender);
     }
 
-    function getListingfees() public view returns(uint){
+    function getListingFees() public view returns (uint256) {
         return listingFee; 
     }
 
-
-    // list the item on the market.
-    function createMarketItem(address tokenAddress, uint256 tokenId, uint256 price) public payable {
-        require(msg.value == listingFee, "Amount of the Token must be something/greater than 0.");
-        require(price > 0, "Price of the Token must be something/greater than 0.");    
+    // List an ERC-20 token on the marketplace
+    function createMarketItem(address tokenAddress, uint256 amount, uint256 price) public payable {
+        require(msg.value == listingFee, "Must pay listing fee.");
+        require(price > 0, "Price must be greater than 0.");
+        require(amount > 0, "Amount must be greater than 0.");
 
         _marketItemIds.increment();
+        uint256 marketItemId = _marketItemIds.current();
 
-        marketItemIdToMarketItem[_marketItemIds.current()] = MarketItem(
-            _marketItemIds.current(),
-            tokenId,
+        // Transfer tokens from seller to contract
+        require(IERC20(tokenAddress).transferFrom(msg.sender, address(this), amount), "Transfer failed.");
+
+        marketItemIdToMarketItem[marketItemId] = MarketItem(
+            marketItemId,
+            amount,
             tokenAddress,
             payable(msg.sender),
-            payable(address(0)),   // u gotta specify weather something is payable or not.
+            payable(address(0)), 
             price,
             false,
             false
         );
     }
 
+    // Buy a token from the marketplace
+    function createMarketForSale(uint256 marketItemId) public payable {
+        MarketItem storage item = marketItemIdToMarketItem[marketItemId];
 
+        require(!item.sold, "Item already sold.");
+        require(!item.canceled, "Item was canceled.");
+        require(msg.value == item.price, "Incorrect price.");
 
+        // Mark item as sold
+        item.sold = true;
+        item.buyer = payable(msg.sender);
 
-    // create a market for sale 
-    function createMarketforsale(address coinAddress, uint256 tokenId) public payable{
+        // Transfer tokens to buyer
+        require(IERC20(item.tokenAddress).transfer(msg.sender, item.amount), "Token transfer failed.");
 
-
-        // add token and price 
-        uint256 price = marketItemIdToMarketItem[_marketItemIds.current()].price;
-        uint256 tokenId = marketItemIdToMarketItem[_marketItemIds.current()].tokenId;
-
-        require(msg.value == price, "Please submit the asking price in order to sell");
-        marketItemIdToMarketItem[_marketItemIds.current()].sold = true;
-
-        marketItemIdToMarketItem[_marketItemIds.current()].seller.transfer(msg.value);
-        IERC20(coinAddress).transferFrom(address(this), msg.sender, tokenId);
-
-
-        _tokensSold.increment();
-    
-        payable(owner).transfer(listingFee);
+        // Transfer funds to seller
+        item.seller.transfer(msg.value);
         
+        // Increment sold counter
+        _tokensSold.increment();
+
+        // Pay listing fee to contract owner
+        owner.transfer(listingFee);
     }
 
-    // Find the Available Market items.
+    // Fetch available market items
+    function fetchAvailableMarketItems() public view returns (MarketItem[] memory) {
+        uint256 totalItems = _marketItemIds.current();
+        uint256 soldItems = _tokensSold.current();
+        uint256 canceledItems = _tokensCanceled.current();
+        uint256 availableItems = totalItems - (soldItems + canceledItems);
 
-    function fetchAvailableMarketItems() public view returns(MarketItem [] memory){
-        uint256 itemcount = _marketItemIds.current();
-        uint256 soldItemcount = _tokensSold.current();
-        uint256 itemCanceledcount = _tokensCanceled.current();
-
-        uint256 availItems = itemcount > (soldItemcount + itemCanceledcount) ? itemcount - soldItemcount - itemCanceledcount : 0;
-
-        MarketItem [] memory marketItems = new MarketItem[](availItems);
-        
-
-        // logic to put the items in the array;
+        MarketItem[] memory items = new MarketItem[](availableItems);
         uint index = 0;
-        for(uint i = 0; i<itemcount;i++){
-            if(!marketItemIdToMarketItem[i].sold && !marketItemIdToMarketItem[i].canceled){
-                marketItems[index]  = marketItemIdToMarketItem[i]; // put the available market items in the array.
+
+        for (uint i = 1; i <= totalItems; i++) {
+            if (!marketItemIdToMarketItem[i].sold && !marketItemIdToMarketItem[i].canceled) {
+                items[index] = marketItemIdToMarketItem[i];
                 index++;
             }
         }
-
-
-        return marketItems;
+        return items;
     }
 
+    // Cancel a listing and return tokens to seller
+    function cancelMarketItem(uint256 marketItemId) public {
+        MarketItem storage item = marketItemIdToMarketItem[marketItemId];
 
+        require(item.amount > 0, "Market item does not exist.");
+        require(item.seller == msg.sender, "You are not the seller.");
+        require(!item.sold, "Cannot cancel a sold item.");
 
+        // Transfer tokens back to the seller
+        require(IERC20(item.tokenAddress).transfer(item.seller, item.amount), "Token return failed.");
 
+        // Mark item as canceled
+        item.canceled = true;
+
+        // Increment canceled counter
+        _tokensCanceled.increment();
+    }
 }
