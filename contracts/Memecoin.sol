@@ -4,19 +4,18 @@ pragma solidity ^0.8.4;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract MemeCoin is ERC20, Ownable { // ownable here will restrict the user from only deployer to mint mint new tokens 
-    uint256 private initial_supply = 1_000_000 * 10**18 ; 
+contract MemeCoin is ERC20, Ownable {
+    uint256 private initialSupply = 1_000_000 * 10**18; 
 
-    constructor() ERC20("MemeCoin", "Meme"){
-        _mint(msg.sender, initial_supply);
+    constructor() ERC20("MemeCoin", "MEME") {
+        _mint(msg.sender, initialSupply);
     }
 
-    function Mint(address to, uint256 amount) public {
+    function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
     }
-    
-    function Burn(uint256 amount) public {
+
+    function burn(uint256 amount) external {
         _burn(msg.sender, amount);
     }
 }
-

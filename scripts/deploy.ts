@@ -8,7 +8,7 @@ async function main() {
 
 
   const MyContract2 = await ethers.getContractFactory("Marketplace");
-  const myContract2 = await MyContract2.deploy();
+  const myContract2 = await MyContract2.deploy("");
   console.log("Contract deployed to:", myContract2.target);
 
 }
